@@ -49,3 +49,7 @@ services:
 
       # 🔥 REQUIRED FOR SUB-PATH
       SERVER_SERVLET_CONTEXT_PATH: /kafka
+
+networks:
+  shared-backend-net:
+    external: true
