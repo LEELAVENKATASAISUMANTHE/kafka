@@ -2,6 +2,8 @@ version: "3.9"
 
 services:
   zookeeper:
+    networks:
+      - shared-backend-net
     image: confluentinc/cp-zookeeper:7.6.0
     container_name: zookeeper
     ports:
@@ -11,6 +13,8 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
 
   kafka:
+    networks:
+      - shared-backend-net
     image: confluentinc/cp-kafka:7.6.0
     container_name: kafka
     depends_on:
@@ -30,6 +34,8 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 
   kafka-ui:
+    networks:
+      - shared-backend-net
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     depends_on:

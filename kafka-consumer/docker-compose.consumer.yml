@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  kafka-consumer:
+    build: .
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=notifications
+    depends_on:
+      - kafka
