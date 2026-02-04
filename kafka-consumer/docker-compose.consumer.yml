@@ -1,9 +1,17 @@
-version: '3.8'
+version: "3.8"
+
 services:
   kafka-consumer:
     build: .
+    container_name: kafka-consumer
     environment:
       - KAFKA_BROKER=kafka:9092
       - KAFKA_TOPIC=notifications
-    depends_on:
-      - kafka
+    volumes:
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+    networks:
+      - shared-backend-net
+
+networks:
+  shared-backend-net:
+    external: true

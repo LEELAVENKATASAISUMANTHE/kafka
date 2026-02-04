@@ -1,18 +1,8 @@
-// kafka/src/index.js
-require('dotenv').config();
-const consumer = require('./kafka/consumer');
-const handleNotification = require('./handlers/notification.handler');
-const config = require('./config');
+import { startConsumer } from "./kafka/consumer.js";
 
-async function run() {
-  await consumer.connect();
-  await consumer.subscribe({ topic: config.KAFKA_TOPIC, fromBeginning: true });
+console.log("Starting Kafka Consumer...");
 
-  await consumer.run({
-    eachMessage: async ({ topic, partition, message }) => {
-      await handleNotification(message);
-    },
-  });
-}
-
-run().catch(console.error);
+startConsumer().catch((err) => {
+  console.error("Kafka consumer failed:", err);
+  process.exit(1);
+});
