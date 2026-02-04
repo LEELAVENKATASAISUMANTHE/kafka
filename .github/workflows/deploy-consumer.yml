@@ -1,0 +1,37 @@
+name: Deploy Kafka Consumer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "kafka-consumer/**"
+      - ".github/workflows/deploy-consumer.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Copy consumer to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "kafka-consumer/*"
+          target: "/opt/kafka-consumer"
+
+      - name: Build & run Kafka consumer
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /opt/kafka-consumer
+            docker compose -f docker-compose.consumer.yml pull || true
+            docker compose -f docker-compose.consumer.yml up -d --build
