@@ -1,13 +1,6 @@
-import admin from "../config/firebase.js";
-
 export const handleNotification = async (payload) => {
   try {
-    const {
-      tokens = [],
-      title,
-      body,
-      // ❌ ignore data completely
-    } = payload;
+    const { tokens = [], title, body } = payload;
 
     if (!tokens.length) {
       console.warn("No FCM tokens found, skipping");
@@ -15,7 +8,13 @@ export const handleNotification = async (payload) => {
     }
 
     const multicastMessage = {
-      notification: { title, body },
+      webpush: {
+        notification: {
+          title,
+          body,
+          icon: "/icon-192.png",
+        },
+      },
       tokens,
     };
 
@@ -25,21 +24,6 @@ export const handleNotification = async (payload) => {
     console.log(
       `FCM sent → success: ${response.successCount}, failed: ${response.failureCount}`
     );
-
-    // 🧹 cleanup invalid tokens
-    response.responses.forEach((res, idx) => {
-      if (!res.success) {
-        const code = res.error.code;
-        const badToken = tokens[idx];
-
-        if (
-          code === "messaging/registration-token-not-registered" ||
-          code === "messaging/invalid-registration-token"
-        ) {
-          console.log("❌ Invalid token:", badToken);
-        }
-      }
-    });
   } catch (err) {
     console.error("❌ Consumer processing error:", err);
     throw err;
