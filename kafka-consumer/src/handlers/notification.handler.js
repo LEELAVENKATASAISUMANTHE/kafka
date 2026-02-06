@@ -1,3 +1,5 @@
+import admin from "../config/firebase.js";
+
 export const handleNotification = async (payload) => {
   try {
     const { tokens = [], title, body } = payload;
