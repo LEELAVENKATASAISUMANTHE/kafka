@@ -6,7 +6,7 @@ export const handleNotification = async (payload) => {
       tokens = [],
       title,
       body,
-      data = {},
+      // ❌ ignore data completely
     } = payload;
 
     if (!tokens.length) {
@@ -16,9 +16,6 @@ export const handleNotification = async (payload) => {
 
     const multicastMessage = {
       notification: { title, body },
-      data: Object.fromEntries(
-        Object.entries(data).map(([k, v]) => [k, String(v)])
-      ),
       tokens,
     };
 
@@ -40,12 +37,11 @@ export const handleNotification = async (payload) => {
           code === "messaging/invalid-registration-token"
         ) {
           console.log("❌ Invalid token:", badToken);
-          // send to DLQ / log / notify producer
         }
       }
     });
   } catch (err) {
     console.error("❌ Consumer processing error:", err);
-    throw err; // Re-throw to handle at consumer level
+    throw err;
   }
 };
