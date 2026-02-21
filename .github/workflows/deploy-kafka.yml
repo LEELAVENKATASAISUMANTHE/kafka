@@ -34,18 +34,23 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
             set -e
 
-            echo '🚀 Deploying Kafka Stack...'
+            echo '🚀 Deploying Event Stack (Redpanda + Mongo)...'
 
-            # Ensure network exists
-            docker network inspect erp-core-net >/dev/null 2>&1 || \
-            docker network create erp-core-net
+            # Ensure backend network exists
+            if ! docker network inspect erp-core-net >/dev/null 2>&1; then
+              echo '🌐 Creating erp-core-net...'
+              docker network create erp-core-net
+            fi
 
             cd ~/kafka-stack
 
-            echo '🐳 Pulling images from compose file...'
+            echo '📂 Files present:'
+            ls -la
+
+            echo '🐳 Pulling images defined in compose...'
             docker compose -f docker-compose.kafka.yml pull
 
-            echo '🚀 Starting containers...'
+            echo '🚀 Starting / Updating containers...'
             docker compose -f docker-compose.kafka.yml up -d --remove-orphans
 
             echo '📦 Running containers:'
