@@ -23,23 +23,37 @@ jobs:
 
       - name: Deploy to Server
         run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
             set -e
 
-            echo "📦 Navigating to deployment directory..."
+            echo '=============================='
+            echo '🚀 Starting Deployment'
+            echo '=============================='
+
+            if [ ! -d ~/kafka-stack ]; then
+              echo '❌ kafka-stack directory not found!'
+              exit 1
+            fi
+
             cd ~/kafka-stack
 
-            echo "🔄 Pulling latest code..."
+            echo '🔄 Resetting local changes...'
+            git reset --hard HEAD
+            git clean -fd
+
+            echo '⬇️ Pulling latest code...'
             git pull origin main
 
-            echo "🐳 Stopping old containers..."
-            docker compose down
-
-            echo "⬇️ Pulling latest images..."
+            echo '🐳 Pulling latest Docker images...'
             docker compose pull
 
-            echo "🚀 Starting services..."
+            echo '🚀 Starting / Updating containers...'
             docker compose up -d --remove-orphans
 
-            echo "✅ Deployment complete!"
-          EOF
+            echo '📦 Running containers:'
+            docker ps
+
+            echo '=============================='
+            echo '✅ Deployment Complete'
+            echo '=============================='
+          "
