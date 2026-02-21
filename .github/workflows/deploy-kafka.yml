@@ -1,0 +1,45 @@
+name: Deploy Kafka Stack
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Server
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            set -e
+
+            echo "📦 Navigating to deployment directory..."
+            cd ~/kafka-stack
+
+            echo "🔄 Pulling latest code..."
+            git pull origin main
+
+            echo "🐳 Stopping old containers..."
+            docker compose down
+
+            echo "⬇️ Pulling latest images..."
+            docker compose pull
+
+            echo "🚀 Starting services..."
+            docker compose up -d --remove-orphans
+
+            echo "✅ Deployment complete!"
+          EOF
