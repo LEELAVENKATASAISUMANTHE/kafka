@@ -1,63 +1,51 @@
-version: "3.9"
+version: "3.8"
 
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.0
-    container_name: zookeeper
-    restart: unless-stopped
-    networks:
-      - shared-backend-net
-    ports:
-      - "2181:2181"
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-
   kafka:
-    image: confluentinc/cp-kafka:7.6.0
+    image: bitnami/kafka:latest
     container_name: kafka
-    restart: unless-stopped
-    depends_on:
-      - zookeeper
-    networks:
-      - shared-backend-net
     ports:
       - "9092:9092"
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-
-      # 🔥 CRITICAL (internal docker communication)
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-
-      # Single-node safe configs (VERY IMPORTANT)
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-
-      # Memory tuning for 4GB VPS (prevents crashes)
-      KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
-
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
-    restart: unless-stopped
-    depends_on:
-      - kafka
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    volumes:
+      - kafka_data:/bitnami/kafka
     networks:
-      - shared-backend-net
+      - backend-net
+
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
     ports:
-      - "8085:8080"
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - backend-net
+
+  mongo-express:
+    image: mongo-express
+    container_name: mongo-express
+    ports:
+      - "8081:8081"
     environment:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
-      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
-      SERVER_SERVLET_CONTEXT_PATH: /kafka
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+    depends_on:
+      - mongodb
+    networks:
+      - backend-net
+
+volumes:
+  kafka_data:
+  mongo_data:
 
 networks:
-  shared-backend-net:
-    external: true
+  backend-net:
+    driver: bridge
