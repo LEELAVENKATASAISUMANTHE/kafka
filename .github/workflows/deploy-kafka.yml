@@ -14,46 +14,35 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup SSH
+      - name: Setup SSH Key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to Server
+      - name: Copy Files To Server
+        run: |
+          rsync -avz --delete \
+            --exclude ".git" \
+            --exclude ".github" \
+            ./ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/kafka-stack/
+
+      - name: Deploy Containers
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
             set -e
 
-            echo '=============================='
-            echo '🚀 Starting Deployment'
-            echo '=============================='
-
-            if [ ! -d ~/kafka-stack ]; then
-              echo '❌ kafka-stack directory not found!'
-              exit 1
-            fi
+            echo '🚀 Deploying Kafka Stack...'
 
             cd ~/kafka-stack
 
-            echo '🔄 Resetting local changes...'
-            git reset --hard HEAD
-            git clean -fd
-
-            echo '⬇️ Pulling latest code...'
-            git pull origin main
-
-            echo '🐳 Pulling latest Docker images...'
             docker compose pull
-
-            echo '🚀 Starting / Updating containers...'
             docker compose up -d --remove-orphans
 
-            echo '📦 Running containers:'
+            echo '📦 Running Containers:'
             docker ps
 
-            echo '=============================='
             echo '✅ Deployment Complete'
-            echo '=============================='
           "
