@@ -36,15 +36,14 @@ jobs:
 
             echo '🚀 Deploying Kafka Stack...'
 
+            # Ensure network exists
+            docker network inspect erp-core-net >/dev/null 2>&1 || \
+            docker network create erp-core-net
+
             cd ~/kafka-stack
 
-            echo '🧹 Cleaning Docker cache metadata...'
-            docker system prune -af || true
-
-            echo '🐳 Pulling fresh images...'
-            docker pull bitnami/kafka:latest
-            docker pull mongo:7
-            docker pull mongo-express
+            echo '🐳 Pulling images from compose file...'
+            docker compose -f docker-compose.kafka.yml pull
 
             echo '🚀 Starting containers...'
             docker compose -f docker-compose.kafka.yml up -d --remove-orphans
