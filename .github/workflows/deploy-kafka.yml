@@ -36,19 +36,15 @@ jobs:
 
             echo '🚀 Deploying Kafka Stack...'
 
-            mkdir -p ~/kafka-stack
             cd ~/kafka-stack
 
-            echo '📂 Files present:'
-            ls -la
+            echo '🧹 Cleaning Docker cache metadata...'
+            docker system prune -af || true
 
-            if [ ! -f docker-compose.kafka.yml ]; then
-              echo '❌ docker-compose.kafka.yml not found!'
-              exit 1
-            fi
-
-            echo '🐳 Pulling images...'
-            docker compose -f docker-compose.kafka.yml pull
+            echo '🐳 Pulling fresh images...'
+            docker pull bitnami/kafka:latest
+            docker pull mongo:7
+            docker pull mongo-express
 
             echo '🚀 Starting containers...'
             docker compose -f docker-compose.kafka.yml up -d --remove-orphans
