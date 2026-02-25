@@ -36,7 +36,7 @@ services:
     depends_on:
       - mongodb
     networks:
-      - erp-core-net
+      - redis-core-network
 
   redis:
     image: redis:7
