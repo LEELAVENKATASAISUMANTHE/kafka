@@ -36,7 +36,7 @@ services:
     depends_on:
       - mongodb
     networks:
-      - redis-core-network
+      - erp-core-net
 
   redis:
     image: redis:7
@@ -45,7 +45,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - erp-core-net
+      - redis-core-network
 
 volumes:
   redpanda_data:
@@ -54,4 +54,6 @@ volumes:
 
 networks:
   erp-core-net:
+    external: true
+  redis-core-network:
     external: true
