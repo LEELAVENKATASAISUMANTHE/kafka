@@ -13,8 +13,6 @@ services:
       - --check=false
       - --kafka-addr PLAINTEXT://0.0.0.0:9092
       - --advertise-kafka-addr PLAINTEXT://redpanda:9092
-    # ports:
-    #   - "9092:9092"
     volumes:
       - redpanda_data:/var/lib/redpanda/data
     networks:
@@ -40,9 +38,19 @@ services:
     networks:
       - erp-core-net
 
+  redis:
+    image: redis:7
+    container_name: redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - erp-core-net
+
 volumes:
   redpanda_data:
   mongo_data:
+  redis_data:
 
 networks:
   erp-core-net:
