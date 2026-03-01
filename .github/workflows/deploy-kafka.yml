@@ -1,4 +1,4 @@
-name: Deploy Kafka Stack
+name: Deploy Kafka Stack + Prisma Studio
 
 on:
   workflow_dispatch:
@@ -26,6 +26,7 @@ jobs:
           rsync -avz --delete \
             --exclude ".git" \
             --exclude ".github" \
+            --exclude "node_modules" \
             ./ \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/kafka-stack/
 
@@ -34,21 +35,33 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
             set -e
 
-            echo '🚀 Deploying Event Stack (Redpanda + Mongo)...'
+            echo '🚀 Deploying Event Stack (Redpanda + Mongo + Redis + Prisma Studio)...'
 
-            # Ensure backend network exists
+            # Ensure backend networks exist
             if ! docker network inspect erp-core-net >/dev/null 2>&1; then
               echo '🌐 Creating erp-core-net...'
               docker network create erp-core-net
             fi
 
+            if ! docker network inspect redis-core-network >/dev/null 2>&1; then
+              echo '🌐 Creating redis-core-network...'
+              docker network create redis-core-network
+            fi
+
             cd ~/kafka-stack
+
+            # Write DATABASE_URL to .env for Docker Compose interpolation
+            # Uses host.docker.internal so the container can reach host PostgreSQL
+            echo 'DATABASE_URL=${{ secrets.DATABASE_URL }}' > .env
 
             echo '📂 Files present:'
             ls -la
 
             echo '🐳 Pulling images defined in compose...'
-            docker compose -f docker-compose.kafka.yml pull
+            docker compose -f docker-compose.kafka.yml pull --ignore-buildable
+
+            echo '🔨 Building Prisma Studio container...'
+            docker compose -f docker-compose.kafka.yml build prisma-studio
 
             echo '🚀 Starting / Updating containers...'
             docker compose -f docker-compose.kafka.yml up -d --remove-orphans
@@ -57,4 +70,5 @@ jobs:
             docker ps
 
             echo '✅ Deployment Complete'
+            echo '🔗 Prisma Studio available on port 5555'
           "

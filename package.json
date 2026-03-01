@@ -1,0 +1,29 @@
+{
+  "name": "kafka",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "prisma:studio": "prisma studio --port 5555 --browser none",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:pull": "prisma db pull",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LEELAVENKATASAISUMANTHE/kafka.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/LEELAVENKATASAISUMANTHE/kafka/issues"
+  },
+  "homepage": "https://github.com/LEELAVENKATASAISUMANTHE/kafka#readme",
+  "dependencies": {
+    "@prisma/client": "^7.4.2",
+    "prisma": "^7.4.2"
+  }
+}
