@@ -1,43 +1,73 @@
+name: Deploy Kafka Stack + Prisma Studio
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy Files To Server
+        run: |
+          rsync -avz --delete \
+            --exclude ".git" \
+            --exclude ".github" \
+            --exclude "node_modules" \
+            ./ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/kafka-stack/
+
       - name: Deploy Containers
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
             set -e
 
-            echo '🚀 Deploying Event Stack (Redpanda + Mongo + Redis + Prisma Studio)...'
+            echo "🚀 Deploying Event Stack (Redpanda + Mongo + Redis + Prisma Studio)..."
 
-            # Ensure required Docker networks exist
             docker network inspect erp-core-net >/dev/null 2>&1 || docker network create erp-core-net
             docker network inspect redis-core-network >/dev/null 2>&1 || docker network create redis-core-network
 
             cd ~/kafka-stack
 
-            # Create fresh .env for Prisma
-            echo 'DATABASE_URL=${{ secrets.DATABASE_URL }}' > .env
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
 
-            echo '📂 Files present:'
+            echo "📂 Files present:"
             ls -la
 
-            echo '🐳 Pulling images...'
+            echo "🐳 Pulling images..."
             docker compose -f docker-compose.kafka.yml pull --ignore-buildable
 
-            echo '🗄️ Running Prisma db push (Node 20 container)...'
+            echo "🗄️ Running Prisma db push (Node 20 container)..."
             docker run --rm \
               --env-file .env \
-              -v \$(pwd):/app \
+              -v $(pwd):/app \
               -w /app \
               --network host \
               node:20-alpine \
               npx -y prisma db push
 
-            echo '🔨 Building Prisma Studio...'
+            echo "🔨 Building Prisma Studio..."
             docker compose -f docker-compose.kafka.yml build prisma-studio
 
-            echo '🚀 Starting / Updating containers...'
+            echo "🚀 Starting / Updating containers..."
             docker compose -f docker-compose.kafka.yml up -d --remove-orphans
 
-            echo '📦 Running containers:'
+            echo "📦 Running containers:"
             docker ps
 
-            echo '✅ Deployment Complete'
-            echo '🔗 Prisma Studio available on port 5555'
-          "
+            echo "✅ Deployment Complete"
+            echo "🔗 Prisma Studio available on port 5555"
+          EOF
