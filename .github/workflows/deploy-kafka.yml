@@ -1,61 +1,29 @@
-name: Deploy Kafka Stack + Prisma Studio
+- name: Deploy Containers
+  run: |
+    ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+      set -e
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+      cd ~/kafka-stack
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+      echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      echo "Pulling images..."
+      docker compose -f docker-compose.kafka.yml pull --ignore-buildable
 
-      - name: Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+      echo "Running Prisma migration via official Prisma CLI..."
+      docker run --rm \
+        --env-file .env \
+        -v $(pwd):/app \
+        -w /app \
+        --network host \
+        ghcr.io/prisma/prisma:latest \
+        migrate deploy
 
-      - name: Copy Files To Server
-        run: |
-          rsync -avz --delete \
-            --exclude ".git" \
-            --exclude ".github" \
-            --exclude "node_modules" \
-            ./ \
-            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/kafka-stack/
+      echo "Building Prisma Studio..."
+      docker compose -f docker-compose.kafka.yml build prisma-studio
 
-      - name: Deploy Containers
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            set -e
+      echo "Starting containers..."
+      docker compose -f docker-compose.kafka.yml up -d --remove-orphans
 
-            cd ~/kafka-stack
-
-            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
-
-            echo "Pulling images..."
-            docker compose -f docker-compose.kafka.yml pull --ignore-buildable
-
-            echo "Running Prisma migration via official CLI..."
-            docker run --rm \
-              --env-file .env \
-              -v $(pwd):/app \
-              -w /app \
-              --network host \
-              ghcr.io/prisma/prisma:latest \
-              migrate deploy
-
-            echo "Building Prisma Studio..."
-            docker compose -f docker-compose.kafka.yml build prisma-studio
-
-            echo "Starting containers..."
-            docker compose -f docker-compose.kafka.yml up -d --remove-orphans
-
-            echo "Deployment complete"
-          EOF
+      echo "Deployment complete"
+    EOF
