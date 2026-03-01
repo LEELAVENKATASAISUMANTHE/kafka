@@ -54,10 +54,9 @@ services:
     container_name: prisma-studio
     ports:
       - "5555:5555"
-    environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://admin:sumanth123@host.docker.internal:5432/placement?schema=public}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    network_mode: host
     restart: unless-stopped
 
 volumes:

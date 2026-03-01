@@ -35,39 +35,27 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
             set -e
 
-            echo "🚀 Deploying Event Stack (Redpanda + Mongo + Redis + Prisma Studio)..."
-
-            docker network inspect erp-core-net >/dev/null 2>&1 || docker network create erp-core-net
-            docker network inspect redis-core-network >/dev/null 2>&1 || docker network create redis-core-network
-
             cd ~/kafka-stack
 
             echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
 
-            echo "📂 Files present:"
-            ls -la
-
-            echo "🐳 Pulling images..."
+            echo "Pulling images..."
             docker compose -f docker-compose.kafka.yml pull --ignore-buildable
 
-            echo "🗄️ Running Prisma db push (Node 20 container)..."
+            echo "Running Prisma migration via official CLI..."
             docker run --rm \
               --env-file .env \
               -v $(pwd):/app \
               -w /app \
               --network host \
-              node:20-alpine \
-              npx -y prisma db push
+              ghcr.io/prisma/prisma:latest \
+              migrate deploy
 
-            echo "🔨 Building Prisma Studio..."
+            echo "Building Prisma Studio..."
             docker compose -f docker-compose.kafka.yml build prisma-studio
 
-            echo "🚀 Starting / Updating containers..."
+            echo "Starting containers..."
             docker compose -f docker-compose.kafka.yml up -d --remove-orphans
 
-            echo "📦 Running containers:"
-            docker ps
-
-            echo "✅ Deployment Complete"
-            echo "🔗 Prisma Studio available on port 5555"
+            echo "Deployment complete"
           EOF
