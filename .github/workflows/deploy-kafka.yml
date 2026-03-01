@@ -61,8 +61,8 @@ jobs:
             docker compose -f docker-compose.kafka.yml pull --ignore-buildable
 
             echo '🗄️ Pushing Database Schema Changes...'
-            # Install dependencies and then run db push inside a temporary Node 20 container securely connected to the host network
-            docker run --rm -v \$(pwd):/app -w /app --network host node:20 /bin/bash -c "npm install && npx --yes prisma db push --accept-data-loss"
+            # Use npx to download prisma and dotenv instantly on the fly without a full node_modules install
+            docker run --rm -v \$(pwd):/app -w /app --network host node:20 npx -y -p prisma -p dotenv prisma db push --accept-data-loss
 
             echo '🔨 Building Prisma Studio container...'
             docker compose -f docker-compose.kafka.yml build prisma-studio
