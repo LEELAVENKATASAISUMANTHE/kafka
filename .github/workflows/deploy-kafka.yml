@@ -43,13 +43,7 @@ jobs:
             docker compose -f docker-compose.kafka.yml pull --ignore-buildable
 
             echo "Running Prisma migration..."
-            docker run --rm \
-              --env-file .env \
-              -v $(pwd):/app \
-              -w /app \
-              --network host \
-              ghcr.io/prisma/prisma:latest \
-              migrate deploy
+            docker compose -f docker-compose.kafka.yml run --rm prisma-migrate
 
             echo "Building Prisma Studio..."
             docker compose -f docker-compose.kafka.yml build prisma-studio
