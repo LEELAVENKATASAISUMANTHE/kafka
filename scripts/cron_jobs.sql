@@ -1,3 +1,6 @@
+-- Ensure role_name has a unique constraint (required for ON CONFLICT)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_roles_role_name ON roles (role_name);
+
 INSERT INTO roles (role_name, role_description, created_at)
 VALUES
 ('SUPER_ADMIN', 'Full system access', NOW()),
