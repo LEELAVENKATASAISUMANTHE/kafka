@@ -37,7 +37,7 @@ jobs:
       # ── 2. Setup database connection ──
       - name: Setup DB Connection
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CRON_DATABASE_URL }}
         run: |
           echo "🕐 Starting scheduled SQL maintenance..."
           echo "⏰ Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
