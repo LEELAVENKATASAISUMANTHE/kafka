@@ -60,6 +60,10 @@ jobs:
             echo '🐳 Pulling images defined in compose...'
             docker compose -f docker-compose.kafka.yml pull --ignore-buildable
 
+            echo '🗄️ Pushing Database Schema Changes...'
+            # Run db push inside a temporary Node 20 container securely connected to the host network
+            docker run --rm -v $(pwd):/app -w /app --network host node:20 npx --yes prisma db push --skip-generate
+
             echo '🔨 Building Prisma Studio container...'
             docker compose -f docker-compose.kafka.yml build prisma-studio
 
