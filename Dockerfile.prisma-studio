@@ -2,19 +2,21 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files and install dependencies
+# Copy only dependency files first (better caching)
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
 
-# Copy Prisma schema and config
+# Install dependencies (including prisma CLI)
+RUN npm ci --omit=dev
+
+# Copy Prisma schema + config
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 
 # Generate Prisma Client
 RUN npx prisma generate
 
-# Expose Prisma Studio port
+# Expose Prisma Studio
 EXPOSE 5555
 
-# Start Prisma Studio (--browser none for headless, listen on 0.0.0.0)
-CMD ["npx", "prisma", "studio", "--port", "5555", "--browser", "none"]
+# Start Prisma Studio
+CMD ["npx", "prisma", "studio", "--port", "5555", "--hostname", "0.0.0.0", "--browser", "none"]
