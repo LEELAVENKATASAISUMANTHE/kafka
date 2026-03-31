@@ -47,28 +47,6 @@ services:
     networks:
       - redis-core-network
 
-  prisma-migrate:
-    image: node:20-alpine
-    working_dir: /app
-    volumes:
-      - ./:/app
-    env_file:
-      - .env
-    command: sh -c "npm install prisma && npx prisma migrate deploy"
-    network_mode: host
-
-  prisma-studio:
-    build:
-      context: .
-      dockerfile: Dockerfile.prisma-studio
-    container_name: prisma-studio
-    ports:
-      - "5555:5555"
-    env_file:
-      - .env
-    network_mode: host
-    restart: unless-stopped
-
 volumes:
   redpanda_data:
   mongo_data:

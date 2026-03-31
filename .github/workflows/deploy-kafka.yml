@@ -1,4 +1,4 @@
-name: Deploy Kafka Stack + Prisma Studio
+name: Deploy Kafka Stack
 
 on:
   workflow_dispatch:
@@ -37,16 +37,8 @@ jobs:
 
             cd ~/kafka-stack
 
-            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
-
             echo "Pulling images..."
             docker compose -f docker-compose.kafka.yml pull --ignore-buildable
-
-            echo "Running Prisma migration..."
-            docker compose -f docker-compose.kafka.yml run --rm prisma-migrate
-
-            echo "Building Prisma Studio..."
-            docker compose -f docker-compose.kafka.yml build prisma-studio
 
             echo "Starting containers..."
             docker compose -f docker-compose.kafka.yml up -d --remove-orphans
