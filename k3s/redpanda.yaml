@@ -61,7 +61,7 @@ spec:
             - --smp
             - "1"
             - --memory
-            - "512M"
+            - "400M"        # what redpanda allocates internally
             - --reserve-memory
             - "0M"
             - --node-id
@@ -99,10 +99,10 @@ spec:
           resources:
             requests:
               cpu: "250m"
-              memory: "512Mi"
+              memory: "400Mi"
             limits:
-              cpu: "1000m"
-              memory: "512Mi"
+              cpu: "500m"
+              memory: "600Mi"  # always higher than --memory flag
           livenessProbe:
             httpGet:
               path: /v1/status/ready
