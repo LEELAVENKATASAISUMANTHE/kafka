@@ -229,3 +229,5 @@ KAFKA_BROKERS=redpanda.infra.svc.cluster.local:9092
 SCHEMA_REGISTRY_URL=http://redpanda.infra.svc.cluster.local:8081
 DATABASE_URL=postgresql://postgres:<password>@postgres.infra.svc.cluster.local:5432/mydb
 ```
+
+rrt
