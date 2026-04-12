@@ -1,42 +1,4 @@
-# ConfigMap holding the Redpanda Console configuration file
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: redpanda-console-config
-  namespace: infra
-data:
-  config.yaml: |
-    kafka:
-      brokers:
-        - redpanda.infra.svc.cluster.local:9092
-      schemaRegistry:
-        enabled: true
-        urls:
-          - http://redpanda.infra.svc.cluster.local:8081
-    redpanda:
-      adminApi:
-        enabled: true
-        urls:
-          - http://redpanda.infra.svc.cluster.local:9644
-    server:
-      listenPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: redpanda-console
-  namespace: infra
-  labels:
-    app: redpanda-console
-spec:
-  type: ClusterIP
-  selector:
-    app: redpanda-console
-  ports:
-    - name: http
-      port: 8080
-      targetPort: 8080
----
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -73,7 +35,7 @@ spec:
               memory: "256Mi"
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /admin/health
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 10
@@ -81,9 +43,9 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /admin/health
               port: 8080
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
@@ -95,42 +57,3 @@ spec:
         - name: config
           configMap:
             name: redpanda-console-config
----
-# Traefik Middleware: restrict access to Tailscale IP only
-# Uses traefik.io/v1alpha1 (NOT the deprecated traefik.containo.us/v1alpha1)
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: tailscale-whitelist
-  namespace: infra
-spec:
-  ipAllowList:
-    sourceRange:
-      - 100.99.85.17/32
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: redpanda-console
-  namespace: infra
-  annotations:
-    # Reference middleware as: <namespace>-<name>@kubernetescrd
-    traefik.ingress.kubernetes.io/router.middlewares: infra-tailscale-whitelist@kubernetescrd
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-spec:
-  ingressClassName: traefik
-  tls:
-    - hosts:
-        - console.sumantheluri.tech
-      secretName: redpanda-console-tls
-  rules:
-    - host: console.sumantheluri.tech
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: redpanda-console
-                port:
-                  number: 8080
