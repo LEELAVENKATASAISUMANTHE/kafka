@@ -1,0 +1,459 @@
+# ==============================================================================
+# Backup CronJobs — MongoDB, Redis, PostgreSQL → Cloudflare R2
+#
+# Schedule:  0 0 * * *  (daily at midnight UTC)
+# Retention: 7 daily  |  monthly (1st of every month, kept forever)
+#            quarterly is covered by monthly (Jan/Apr/Jul/Oct 1 are monthlies)
+#
+# All jobs use rclone/rclone:latest (Alpine-based) and install the required
+# database client tools via apk at runtime.
+# rclone is configured entirely from environment variables — no config file
+# is baked into the image.
+# ==============================================================================
+
+# --------------------------------------------------------------------------
+# Shared backup scripts embedded as a ConfigMap
+# --------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-scripts
+  namespace: infra
+data:
+
+  # ---------- MongoDB backup script ----------------------------------------
+  mongo-backup.sh: |
+    #!/bin/sh
+    set -e
+
+    DATE=$(date -u +%Y-%m-%d)
+    echo "[$(date -u)] === MongoDB backup starting for ${DATE} ==="
+
+    # Install mongodump from Alpine community repo
+    apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+      mongodb-tools > /dev/null 2>&1
+
+    # Configure rclone from environment variables at runtime
+    mkdir -p /root/.config/rclone
+    cat > /root/.config/rclone/rclone.conf << RCLONE_EOF
+    [r2]
+    type = s3
+    provider = Cloudflare
+    access_key_id = ${R2_ACCESS_KEY_ID}
+    secret_access_key = ${R2_SECRET_ACCESS_KEY}
+    endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+    acl = private
+    RCLONE_EOF
+
+    # Run mongodump — archive + gzip in one pass
+    echo "[$(date -u)] Running mongodump..."
+    mongodump \
+      --host=mongodb.infra.svc.cluster.local \
+      --port=27017 \
+      --username=root \
+      --password="${MONGO_PASSWORD}" \
+      --authenticationDatabase=admin \
+      --gzip \
+      --archive=/tmp/mongodb-${DATE}.gz
+
+    echo "[$(date -u)] mongodump complete. Uploading to R2..."
+
+    # Upload to R2
+    rclone copyto \
+      /tmp/mongodb-${DATE}.gz \
+      "r2:${R2_BUCKET}/backups/daily/mongodb/${DATE}.gz" \
+      --progress
+
+    echo "[$(date -u)] Upload complete: backups/daily/mongodb/${DATE}.gz"
+    rm -f /tmp/mongodb-${DATE}.gz
+
+    # ---- Retention cleanup ---------------------------------------------------
+    # Keep: 1st-of-month backups (monthly) forever
+    # Delete: all other backups older than 7 days
+    echo "[$(date -u)] Running retention cleanup..."
+    NOW=$(date -u +%s)
+    SEVEN_DAYS_SECS=604800
+
+    rclone ls "r2:${R2_BUCKET}/backups/daily/mongodb/" 2>/dev/null | \
+    while read -r size filename; do
+      FILEDATE=$(echo "$filename" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
+      [ -z "$FILEDATE" ] && continue
+
+      FILEDAY=$(echo "$FILEDATE" | cut -d'-' -f3)
+
+      # Keep monthly backups (1st of any month) — these also cover quarterlies
+      if [ "$FILEDAY" = "01" ]; then
+        echo "  [keep-monthly] $filename"
+        continue
+      fi
+
+      # Calculate file age in seconds
+      FILEEPOCH=$(date -d "$FILEDATE 00:00:00 UTC" +%s 2>/dev/null) || continue
+      AGE=$(( NOW - FILEEPOCH ))
+
+      if [ "$AGE" -gt "$SEVEN_DAYS_SECS" ]; then
+        echo "  [delete] $filename ($(( AGE / 86400 )) days old)"
+        rclone deletefile "r2:${R2_BUCKET}/backups/daily/mongodb/$filename"
+      else
+        echo "  [keep-recent] $filename"
+      fi
+    done
+
+    echo "[$(date -u)] === MongoDB backup finished ==="
+
+  # ---------- Redis backup script ------------------------------------------
+  redis-backup.sh: |
+    #!/bin/sh
+    set -e
+
+    DATE=$(date -u +%Y-%m-%d)
+    echo "[$(date -u)] === Redis backup starting for ${DATE} ==="
+
+    # Install redis-cli
+    apk add --no-cache redis > /dev/null 2>&1
+
+    # Configure rclone from environment variables at runtime
+    mkdir -p /root/.config/rclone
+    cat > /root/.config/rclone/rclone.conf << RCLONE_EOF
+    [r2]
+    type = s3
+    provider = Cloudflare
+    access_key_id = ${R2_ACCESS_KEY_ID}
+    secret_access_key = ${R2_SECRET_ACCESS_KEY}
+    endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+    acl = private
+    RCLONE_EOF
+
+    # Trigger BGSAVE and download RDB via redis-cli --rdb (SYNC-based download)
+    echo "[$(date -u)] Downloading Redis RDB snapshot..."
+    redis-cli \
+      -h redis.infra.svc.cluster.local \
+      -a "${REDIS_PASSWORD}" \
+      --no-auth-warning \
+      --rdb /tmp/redis-dump.rdb
+
+    echo "[$(date -u)] Compressing RDB..."
+    gzip -c /tmp/redis-dump.rdb > /tmp/redis-${DATE}.gz
+    rm -f /tmp/redis-dump.rdb
+
+    echo "[$(date -u)] Uploading to R2..."
+    rclone copyto \
+      /tmp/redis-${DATE}.gz \
+      "r2:${R2_BUCKET}/backups/daily/redis/${DATE}.gz" \
+      --progress
+
+    echo "[$(date -u)] Upload complete: backups/daily/redis/${DATE}.gz"
+    rm -f /tmp/redis-${DATE}.gz
+
+    # ---- Retention cleanup ---------------------------------------------------
+    echo "[$(date -u)] Running retention cleanup..."
+    NOW=$(date -u +%s)
+    SEVEN_DAYS_SECS=604800
+
+    rclone ls "r2:${R2_BUCKET}/backups/daily/redis/" 2>/dev/null | \
+    while read -r size filename; do
+      FILEDATE=$(echo "$filename" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
+      [ -z "$FILEDATE" ] && continue
+
+      FILEDAY=$(echo "$FILEDATE" | cut -d'-' -f3)
+
+      # Keep monthly (1st of month) — also covers quarterlies
+      if [ "$FILEDAY" = "01" ]; then
+        echo "  [keep-monthly] $filename"
+        continue
+      fi
+
+      FILEEPOCH=$(date -d "$FILEDATE 00:00:00 UTC" +%s 2>/dev/null) || continue
+      AGE=$(( NOW - FILEEPOCH ))
+
+      if [ "$AGE" -gt "$SEVEN_DAYS_SECS" ]; then
+        echo "  [delete] $filename ($(( AGE / 86400 )) days old)"
+        rclone deletefile "r2:${R2_BUCKET}/backups/daily/redis/$filename"
+      else
+        echo "  [keep-recent] $filename"
+      fi
+    done
+
+    echo "[$(date -u)] === Redis backup finished ==="
+
+  # ---------- PostgreSQL backup script -------------------------------------
+  postgres-backup.sh: |
+    #!/bin/sh
+    set -e
+
+    DATE=$(date -u +%Y-%m-%d)
+    echo "[$(date -u)] === PostgreSQL backup starting for ${DATE} ==="
+
+    # Install pg_dumpall
+    apk add --no-cache postgresql-client > /dev/null 2>&1
+
+    # Configure rclone from environment variables at runtime
+    mkdir -p /root/.config/rclone
+    cat > /root/.config/rclone/rclone.conf << RCLONE_EOF
+    [r2]
+    type = s3
+    provider = Cloudflare
+    access_key_id = ${R2_ACCESS_KEY_ID}
+    secret_access_key = ${R2_SECRET_ACCESS_KEY}
+    endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+    acl = private
+    RCLONE_EOF
+
+    echo "[$(date -u)] Running pg_dumpall (all databases)..."
+    PGPASSWORD="${POSTGRES_PASSWORD}" pg_dumpall \
+      -h postgres.infra.svc.cluster.local \
+      -U postgres | gzip > /tmp/postgres-${DATE}.gz
+
+    echo "[$(date -u)] Uploading to R2..."
+    rclone copyto \
+      /tmp/postgres-${DATE}.gz \
+      "r2:${R2_BUCKET}/backups/daily/postgres/${DATE}.gz" \
+      --progress
+
+    echo "[$(date -u)] Upload complete: backups/daily/postgres/${DATE}.gz"
+    rm -f /tmp/postgres-${DATE}.gz
+
+    # ---- Retention cleanup ---------------------------------------------------
+    echo "[$(date -u)] Running retention cleanup..."
+    NOW=$(date -u +%s)
+    SEVEN_DAYS_SECS=604800
+
+    rclone ls "r2:${R2_BUCKET}/backups/daily/postgres/" 2>/dev/null | \
+    while read -r size filename; do
+      FILEDATE=$(echo "$filename" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
+      [ -z "$FILEDATE" ] && continue
+
+      FILEDAY=$(echo "$FILEDATE" | cut -d'-' -f3)
+
+      # Keep monthly (1st of month) — also covers quarterlies
+      if [ "$FILEDAY" = "01" ]; then
+        echo "  [keep-monthly] $filename"
+        continue
+      fi
+
+      FILEEPOCH=$(date -d "$FILEDATE 00:00:00 UTC" +%s 2>/dev/null) || continue
+      AGE=$(( NOW - FILEEPOCH ))
+
+      if [ "$AGE" -gt "$SEVEN_DAYS_SECS" ]; then
+        echo "  [delete] $filename ($(( AGE / 86400 )) days old)"
+        rclone deletefile "r2:${R2_BUCKET}/backups/daily/postgres/$filename"
+      else
+        echo "  [keep-recent] $filename"
+      fi
+    done
+
+    echo "[$(date -u)] === PostgreSQL backup finished ==="
+
+---
+# --------------------------------------------------------------------------
+# MongoDB Backup CronJob
+# --------------------------------------------------------------------------
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mongodb-backup
+  namespace: infra
+  labels:
+    app: mongodb-backup
+spec:
+  schedule: "0 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: mongodb-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: mongodb-backup
+              image: rclone/rclone:latest
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "/scripts/mongo-backup.sh"]
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+              env:
+                - name: MONGO_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: MONGO_PASSWORD
+                - name: R2_ACCOUNT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_ACCOUNT_ID
+                - name: R2_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_ACCESS_KEY_ID
+                - name: R2_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_SECRET_ACCESS_KEY
+                - name: R2_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_BUCKET
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755
+---
+# --------------------------------------------------------------------------
+# Redis Backup CronJob
+# --------------------------------------------------------------------------
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redis-backup
+  namespace: infra
+  labels:
+    app: redis-backup
+spec:
+  schedule: "0 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: redis-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: redis-backup
+              image: rclone/rclone:latest
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "/scripts/redis-backup.sh"]
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "256Mi"
+              env:
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: REDIS_PASSWORD
+                - name: R2_ACCOUNT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_ACCOUNT_ID
+                - name: R2_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_ACCESS_KEY_ID
+                - name: R2_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_SECRET_ACCESS_KEY
+                - name: R2_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_BUCKET
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755
+---
+# --------------------------------------------------------------------------
+# PostgreSQL Backup CronJob
+# --------------------------------------------------------------------------
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: infra
+  labels:
+    app: postgres-backup
+spec:
+  schedule: "0 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: postgres-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: postgres-backup
+              image: rclone/rclone:latest
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "/scripts/postgres-backup.sh"]
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: POSTGRES_PASSWORD
+                - name: R2_ACCOUNT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_ACCOUNT_ID
+                - name: R2_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_ACCESS_KEY_ID
+                - name: R2_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_SECRET_ACCESS_KEY
+                - name: R2_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: infra-secrets
+                      key: R2_BUCKET
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755

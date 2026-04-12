@@ -1,0 +1,66 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "k3s/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Apply K3s manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "v1.28.4"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Verify cluster connectivity
+        run: kubectl cluster-info
+
+      - name: Apply namespace
+        run: kubectl apply -f k3s/namespace.yaml
+
+      - name: Apply secrets
+        run: kubectl apply -f k3s/secrets.yaml
+
+      - name: Apply MongoDB
+        run: kubectl apply -f k3s/mongodb.yaml
+
+      - name: Apply Redis
+        run: kubectl apply -f k3s/redis.yaml
+
+      - name: Apply Redpanda
+        run: kubectl apply -f k3s/redpanda.yaml
+
+      - name: Apply Redpanda Console
+        run: kubectl apply -f k3s/redpanda-console.yaml
+
+      - name: Apply PostgreSQL
+        run: kubectl apply -f k3s/postgres.yaml
+
+      - name: Apply backup CronJobs
+        run: kubectl apply -f k3s/backup-cronjobs.yaml
+
+      - name: Wait for StatefulSets to roll out
+        run: |
+          kubectl rollout status statefulset/mongodb   -n infra --timeout=120s
+          kubectl rollout status statefulset/redis     -n infra --timeout=120s
+          kubectl rollout status statefulset/redpanda  -n infra --timeout=120s
+          kubectl rollout status statefulset/postgres  -n infra --timeout=120s
+
+      - name: Show final cluster state
+        run: kubectl get all -n infra
